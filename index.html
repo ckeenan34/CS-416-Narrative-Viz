@@ -1,8 +1,126 @@
+<!DOCTYPE html>
 <html>
+    <script src='https://d3js.org/d3.v5.min.js'></script>
+    <!-- Helper scripts -->
+    <script>
+        function getFile(path){
+            const baseUrl = "https://raw.githubusercontent.com/ckeenan34/ckeenan34.github.io/main/";
+            return baseUrl + path;
+        }
+        function countUnique(arr, prop="name"){
+            return new Set(Array.from(arr).map(v=> v[prop])).size;
+        }
+        function filterByProp(data, val, prop="year"){
+            return data.filter(d=> d[prop]==val);
+        }
+        // setting up a global variable
+        const jsCache = {};
+    </script>
+    <!-- Main D3 visualizations -->
+    <script>
+        // forced to wrap this in async function so we can use await
+        (async()=>{
+            let data = await d3.csv(getFile("/data/billionaires.csv"));
+            jsCache.originalData = data;
+            // data = data.slice(0,1000);
+            data = filterByProp(data, "2014");
+            console.log(data);
 
-<script src="https://d3js.org/d3.v6.min.js"></script>
+            var countUniqueNames = countUnique(data);
 
-<h1>TODO</h1>
-<svg></svg>
+            // Credit to https://d3-graph-gallery.com/graph/barplot_horizontal.html for getting me started on a horizontal bar chart
+            // I've modified this quite a bit, 
+            // set the dimensions and margins of the graph
+            var margin = {top: 20, right: 30, bottom: 40, left: 200},
+                width = 1500 - margin.left - margin.right,
+                height = 20*countUniqueNames - margin.top - margin.bottom;
+
+            // append the svg object to the body of the page
+            var svg = d3.select("#svg1")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                    .attr("transform",
+                        "translate(" + margin.left + "," + margin.top + ")");
+
+            // Parse the Data
+            // Add X axis
+            var x = d3.scaleLinear()
+                .domain([0, 80])
+                .range([ 0, width]);
+            svg.append("g")
+            //     .attr("transform", "translate(0," + height + ")")
+                .call(d3.axisTop(x))
+                // .selectAll("text")
+                // .attr("transform", "translate(-10,0)rotate(-45)")
+                // .style("text-anchor", "end");
+
+            // Y axis
+            var y = d3.scaleBand()
+                .range([ 0, height ])
+                .domain(data.map(function(d) { return d.name; }))
+                .padding(.1);
+            svg.append("g")
+                .call(d3.axisLeft(y))
+
+            var myColor = d3.scaleOrdinal().domain(data)
+                .range(d3.schemeCategory10 );
+
+            //Bars
+            svg.selectAll("rect")
+                .data(data)
+                .enter()
+                .append("rect")
+                .attr("x", x(0) )
+                .attr("y", function(d) { return y(d.name); })
+                .attr("width", function(d) { return x(d["wealth.worth in billions"]); })
+                .attr("height", y.bandwidth())
+                .attr("fill", (d) => myColor(d["location.citizenship"]))
+        })()
+    </script>
+
+    <body>
+      <h1>UIUC CS 415 - Narrative Visualization (in progress)</h1>
+      <h2>By Cameron Keenan</h2>
+      <svg id="svg1"></svg>
+
+    </body>
+
 
 </html>
+
+
+
+
+<!-- Attempt #1 (Failed) -->
+<!-- var margin = {top: 20, right: 30, bottom: 40, left: 200};
+var width = 600 - margin.left - margin.right;
+var height = 500 - margin.top - margin.bottom;
+
+x = d3.scaleLinear().domain([0,150]).range([0,width]);
+y = d3.scaleBand().domain(data.map((d) => d.name)).range([0,height]);
+xl = d3.scaleBand().domain([0,1,2,3,4,5]).range([0,200]);
+
+d3.select('svg')
+    .append("g")
+            .attr("transform",
+                "translate(" + margin.left + "," + margin.top + ")")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+    .selectAll("rect")
+    .data(data)
+    .enter()
+    .append("rect")
+        .attr("x", 0)
+        .attr("y", function (d) { return y(d.name); } )
+        .attr('width',function(d,i) {return x(d["wealth.worth in billions"]);})
+        .attr('height',y.bandwidth)
+
+    d3.select('svg')
+    .append("g")
+    .call(d3.axisLeft(y));
+
+    d3.select('svg')
+    .append("g")
+        .attr("transform", `translate(${height})`)
+    .call(d3.axisTop(x)); -->
