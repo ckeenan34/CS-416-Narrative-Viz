@@ -7,6 +7,16 @@
 
     <!-- Helpers -->
     <script>
+        // Helper to call something on end of all transitions from https://stackoverflow.com/questions/10692100/invoke-a-callback-at-the-end-of-a-transition/20773846#20773846
+        function endall(transition, callback) { 
+            if (typeof callback !== "function") throw new Error("Wrong callback in endall");
+            if (transition.size() === 0) { callback() }
+            var n = 0; 
+            transition 
+                .each(function() { ++n; }) 
+                .each("end", function() { if (!--n) callback.apply(this, arguments); }); 
+        } 
+
         function getFile(path){
             const baseUrl = "https://raw.githubusercontent.com/ckeenan34/ckeenan34.github.io/main/";
             return baseUrl + path;
@@ -17,8 +27,12 @@
         function uniqueByProp(arr, prop="name"){
             return Array.from(new Set(Array.from(arr).map(v=> v[prop])))
         }
-        function filterByProp(data, val, prop="year"){
-            return data.filter(d=> d[prop]==val);
+        function filterByProps(data, mapping={}){
+            var newData = data;
+            Object.keys(mapping).forEach(prop => {
+                newData = newData.filter(d => d[prop] == mapping[prop]);
+            });
+            return newData;
         }
         function sortByProp(data, prop){
             data.sort((a,b)=> d3.descending(+a[prop], +b[prop]));
@@ -44,7 +58,49 @@
         }
 
         // setting up a global variable for saving parameters and caching data
-        const props = {};
+        let props = {
+            originalData: undefined,
+            data: undefined
+        }
+        const slides = [
+            {
+                xAxis: "wealth.worth in billions",
+                yAxis: "name",
+                colorBy: "location.citizenship",
+                filters: {
+                    year: "2001"
+                },
+                slide: 1
+            },
+            {
+                xAxis: "wealth.per.gdp",
+                yAxis: "name",
+                colorBy: "location.citizenship",
+                filters: {
+                    year: "2001"
+                },
+                slide: 2
+            },
+            {
+                xAxis: "wealth.per.age",
+                yAxis: "name",
+                colorBy: "location.citizenship",
+                filters: {
+                    year: "2014"
+                },
+                slide: 3
+            },
+        ]
+        // start with slide 1 properties
+        function switchToSlide(slide){
+            slide = Math.floor(slide);
+            if (slide >= slides.length || slide < 0){
+                console.warn("Invalid slide: "+ slide);
+                return false;
+            }
+            Object.assign(props, slides[slide-1]);
+            return true;
+        }
     </script>
 
     <style>
@@ -59,23 +115,20 @@
     <script>
         // forced to wrap this in async function so we can use await
         (async()=>{
+            // start on slide 1
+            switchToSlide(1);
+
             // fetch the data and stitch 
             let data = await d3.csv(getFile("/data/billionaires.csv"));
             data.forEach(d => {
-                d['wealth.per.gdp'] = !d["location.gdp"] ? 0: +d["wealth.worth in billions"]/+d["location.gdp"];
-                d['wealth.per.age'] = !d["demographics.age"] ? 0: +d["wealth.worth in billions"]/+d["demographics.age"];
+                debugger;
+                d['wealth.per.gdp'] = !(denom = +d["location.gdp"]) || denom===0 ? 0: tb(+d["wealth.worth in billions"])/denom;
+                d['wealth.per.age'] = !(denom = +d["demographics.age"]) || denom ? 0: tb(+d["wealth.worth in billions"])/denom;
             });
+            props.originalData = data;
 
             // setup the default props
-            props.originalData = data;
-            props.data = data;
-            props.xAxis = "wealth.worth in billions";
-            props.yAxis = "name";
-            props.colorBy = "location.citizenship";
-            props.filters = {
-                year: "2014"
-            }
-            props.data = filterByProp(props.data, props.filters.year, prop="year");
+            props.data = filterByProps(props.originalData, props.filters);
             props.data = sortByProp(props.data, props.xAxis);
             console.log(props.data);
 
@@ -164,6 +217,8 @@
                 .data(props.data)
                 .enter()
                 .append("rect")
+                    .attr("y", function(d) { return y(d[props.yAxis]); })
+                    .attr("height", y.bandwidth())
                     .on("click", (d)=> window.open("https://www.google.com/search?q=" + encodeURIComponent(d.name), "_blank"))
                     .on("mouseover", mouseover)
                     .on("mouseleave", mouseleave)
@@ -174,6 +229,8 @@
                     .attr("height", y.bandwidth())
                     .attr("fill", (d) => colorScale(d[props.colorBy]))
                     .style("opacity", 0.9)
+                    .end()
+                    .then(addSlideAnnotations) // add the annotations (see below for all annotation functions)
 
             // annotations
             function annotationLocation(selector, rectContactLoc=1){
@@ -211,7 +268,6 @@
                     ...annotationLocation(n-1, 1)
                 }
             }
-
             function selectAnnotations(slide){
                 const annotations = [
                     {
@@ -281,25 +337,20 @@
                 ]
                 return annotations.filter((ann) => ann.slides.has(slide));
             }
-
-            // Add annotations to the chart after all transitions are done
-            setTimeout(()=> {
+            function addSlideAnnotations(){
+                // remove old annotations if they are still there
+                d3.select('#svg1 > g.annotations').remove();
                 d3.select("#svg1")
-                .append("g")
-                .attr("class", "annotations")
-                .call(d3.annotation().annotations(selectAnnotations(1)))
-            }, 1000)
-
+                    .append("g")
+                    .attr("class", "annotations")
+                    .call(d3.annotation().annotations(selectAnnotations(props.slide)))
+            }
 
             function transition(){
-                // props.xAxis = "rank";
-                props.colorBy = "wealth.how.inherited";
-                props.filters.year = "2001";
-
                 // sort/filter the underlying data according to the props
-                props.data = filterByProp(props.originalData, props.filters.year, prop="year");
+                props.data = filterByProps(props.originalData, props.filters);
                 props.data = sortByProp(props.data, props.xAxis);
-                console.log(props.data);
+                console.log(props);
 
                 // change variables in preparation for transition
                 // svg height needs to change because it depends on the number of billionaires
@@ -312,9 +363,15 @@
                 // color
                 colorScale.domain(uniqueByProp(props.data, props.colorBy));
 
+                debugger;
+                // remove annotations
+                d3.select('#svg1 > g.annotations').remove();
+
+                // change the height on the svg
                 d3.select("#svg1")
                     .attr("height", height + margin.top + margin.bottom)
 
+                // add the data to the rects
                 var mark = svg.selectAll("rect")
                     .data(props.data)
                 
@@ -328,7 +385,9 @@
                     .attr("width", function(d) { return x(d[props.xAxis]); })
                     .attr("height", y.bandwidth())
                     .attr("fill", (d) => colorScale(d[props.colorBy]))
-                    .style("opacity", 0.9);
+                    .style("opacity", 0.9)
+                    .end()
+                    .then(addSlideAnnotations)
                 
                 // remove rects that are no longer in the data
                 mark.exit()
@@ -343,17 +402,20 @@
                     .transition().duration(1000)
                     .call(yAxis)
 
-                // remove old annotations
-                d3.select('#svg1 > g.annotations').remove()
-                // add new annotations back in after above transitions are complete
-                setTimeout(()=> {
-                    d3.select("#svg1")
-                    .append("g")
-                    .attr("class", "annotations")
-                    .call(d3.annotation().annotations(selectAnnotations(2)))
-                }, 1000)
+                return true;
             }
-            // setTimeout(transition, 5000);
+            
+            function nextSlide(){
+                props.slide++;
+                return switchToSlide(props.slide) && transition();
+            }
+            // let autoNextSlide = setTimeout(()=> {
+            //     console.log("auto next slide");
+            //     nextSlide();
+            //     // if (!nextSlide()){
+            //     //     clearInterval(autoNextSlide);
+            //     // }
+            // }, 5000)
         })()
     </script>
 
