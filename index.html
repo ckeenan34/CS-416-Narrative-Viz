@@ -1,7 +1,11 @@
 <!DOCTYPE html>
 <html>
+    <!-- D3 library -->
     <script src='https://d3js.org/d3.v5.min.js'></script>
-    <!-- Helper scripts -->
+    <!-- D3 Annotations library -->
+    <script src="https://rawgit.com/susielu/d3-annotation/master/d3-annotation.min.js"></script>
+
+    <!-- Helpers -->
     <script>
         function getFile(path){
             const baseUrl = "https://raw.githubusercontent.com/ckeenan34/ckeenan34.github.io/main/";
@@ -13,9 +17,41 @@
         function filterByProp(data, val, prop="year"){
             return data.filter(d=> d[prop]==val);
         }
+        function sortByProp(data, prop="wealth.worth in billions"){
+            data.sort((a,b)=> d3.descending(+a[prop], +b[prop]));
+            return data;
+        }
+        // ordinal function credited to https://stackoverflow.com/questions/13627308/add-st-nd-rd-and-th-ordinal-suffix-to-a-number/57518703#57518703
+        function ordinal(number) {
+            const english_ordinal_rules = new Intl.PluralRules("en", {
+                type: "ordinal"
+            });
+            const suffixes = {
+                one: "st",
+                two: "nd",
+                few: "rd",
+                other: "th"
+            }
+            const suffix = suffixes[english_ordinal_rules.select(number)];
+            return (number + suffix);
+        }
+        // times a number by a billion. Helpful since the data comes in divided by a billion
+        function tb(num){
+            return num*1000000000;
+        }
+
         // setting up a global variable
         const jsCache = {};
     </script>
+
+    <style>
+        .tooltip {
+            position: absolute;
+            z-index: 100;
+            display: block;
+        }
+    </style>
+
     <!-- Main D3 visualizations -->
     <script>
         // forced to wrap this in async function so we can use await
@@ -23,7 +59,9 @@
             let data = await d3.csv(getFile("/data/billionaires.csv"));
             jsCache.originalData = data;
             // data = data.slice(0,1000);
+            // Parse the Data
             data = filterByProp(data, "2014");
+            data = sortByProp(data, "wealth.worth in billions");
             console.log(data);
 
             var countUniqueNames = countUnique(data);
@@ -31,7 +69,7 @@
             // Credit to https://d3-graph-gallery.com/graph/barplot_horizontal.html for getting me started on a horizontal bar chart
             // I've modified this quite a bit, 
             // set the dimensions and margins of the graph
-            var margin = {top: 20, right: 30, bottom: 40, left: 200},
+            var margin = {top: 80, right: 30, bottom: 40, left: 200},
                 width = 1500 - margin.left - margin.right,
                 height = 20*countUniqueNames - margin.top - margin.bottom;
 
@@ -43,7 +81,6 @@
                     .attr("transform",
                         "translate(" + margin.left + "," + margin.top + ")");
 
-            // Parse the Data
             // Add X axis
             var x = d3.scaleLinear()
                 .domain([0, 80])
@@ -54,6 +91,12 @@
                 // .selectAll("text")
                 // .attr("transform", "translate(-10,0)rotate(-45)")
                 // .style("text-anchor", "end");
+
+            svg.append("text")
+                .attr("text-anchor", "middle")
+                .attr("x", width/2)
+                .attr("y", -margin.top/2)
+                .text("Wealth in Billions (USD)");
 
             // Y axis
             var y = d3.scaleBand()
@@ -66,6 +109,42 @@
             var myColor = d3.scaleOrdinal().domain(data)
                 .range(d3.schemeCategory10 );
 
+            // Setup tooltip. Modified from this helpful page https://d3-graph-gallery.com/graph/interactivity_tooltip.html
+            var Tooltip = d3.select("#chart")
+                .append("div")
+                .style("opacity", 0)
+                .attr("class", "tooltip")
+                .style("background-color", "white")
+                .style("border", "solid")
+                .style("border-width", "2px")
+                .style("border-radius", "5px")
+                .style("padding", "5px")
+
+            // Three function that change the tooltip when user hover / move / leave a cell
+            var mouseover = function(d) {
+                Tooltip
+                .style("opacity", 1)
+                .html("This billionaire is worth: $" + tb(d["wealth.worth in billions"]).toLocaleString())
+                .style("left", (x(d["wealth.worth in billions"])+margin.left+10) + "px")
+                .style("top", (y(d.name)+margin.top) + "px")
+                d3.select(this)
+                .style("stroke", "black")
+                .style("opacity", 1)
+            }
+            // var mousemove = function(d) {
+            //     Tooltip
+            //     .html("The exact value of<br>this cell is: " + d["wealth.worth in billions"])
+            //     .style("left", (x(d["wealth.worth in billions"])) + "px")
+            //     .style("top", (y(d.name)) + "px")
+            // }
+            var mouseleave = function(d) {
+                Tooltip
+                .style("opacity", 0)
+                d3.select(this)
+                .style("stroke", "none")
+                .style("opacity", 0.9)
+            }
+            
             //Bars
             svg.selectAll("rect")
                 .data(data)
@@ -76,13 +155,120 @@
                 .attr("width", function(d) { return x(d["wealth.worth in billions"]); })
                 .attr("height", y.bandwidth())
                 .attr("fill", (d) => myColor(d["location.citizenship"]))
+                .style("opacity", 0.9)
+                .on("click", (d)=> window.open("https://www.google.com/search?q=" + encodeURIComponent(d.name), "_blank"))
+                .on("mouseover", mouseover)
+                // .on("mousemove", mousemove)
+                .on("mouseleave", mouseleave)
+
+            function annotationLocation(selector, rectContactLoc=1){
+                var row;
+                if (typeof(selector) == "string"){
+                    row = data.find(d => d.name === selector);
+                }else if (typeof(selector) == 'number'){
+                    row = data[selector];
+                }
+                return {
+                    x: x(row["wealth.worth in billions"]) + margin.left,
+                    y: y(row.name) + margin.top + y.bandwidth() * rectContactLoc
+                }
+            }
+            function topIAnnotation(n, percent){
+                if (percent){
+                    n = Math.floor(data.length*percent+.5);
+                }
+                var total = d3.sum(data.slice(0, n).map(o=>o["wealth.worth in billions"]))
+                total *= 1000000000;
+                total = Math.floor(total + .5);
+                return {
+                    note: {
+                        label: `The ${n} people above this line make a combined total of \$${total.toLocaleString()}`,
+                        title: "",
+                        wrap: 190
+                    },
+                    dy: 0,
+                    dx: 100,
+                    color: ["black"],
+                    ...annotationLocation(n-1, 1)
+                }
+            }
+            const annotations = [
+                {
+                    note: {
+                        label: "Bill Gates held the #1 spot for 18 years (non-continuous) and was overtaken by Jeff Bezos in 2017.",
+                        title: "Richest man in the world (at the time)",
+                        wrap: 190,
+                    },
+                    dy: 100,
+                    dx: -100,
+                    color: ["black"],
+                    ...annotationLocation("Bill Gates"),
+                },
+                {
+                    note: {
+                        label: "These are brothers who inherited their dad's company",
+                        title: "",
+                        wrap: 190,
+                    },
+                    dy: -50,
+                    dx: 100,
+                    color: ["black"],
+                    ...annotationLocation("Thomas and Raymond Kwok", .5),
+                },
+                {
+                    note: {
+                        label: "The dad created FEMSA, primarily known for bottling Coca Cola in Mexico",
+                        title: "Two more brothers who inherited their dad's company",
+                        wrap: 190,
+                    },
+                    dy: -50,
+                    dx: 100,
+                    color: ["black"],
+                    ...annotationLocation("Jose and Francisco Jose Calderon Rojas", .5),
+                },
+                {
+                    note: {
+                        label: "Thank you Tom for contributing to UIUC and for funding my master's program through C3 AI",
+                        title: "",
+                        wrap: 190,
+                    },
+                    dy: -50,
+                    dx: 100,
+                    color: ["black"],
+                    ...annotationLocation("Thomas Siebel", .5),
+                },
+                topIAnnotation(20),
+                topIAnnotation(200),
+                topIAnnotation(null, .5),
+                topIAnnotation(null, .9),
+                {
+                    note: {
+                        label: `Even the ${ordinal(data.length)} person here makes \$${(data[data.length -1]["wealth.worth in billions"]*1000000000).toLocaleString()}!`,
+                        title: "Last Billionaire in this dataset",
+                        wrap: 190,
+                    },
+                    dy: -100,
+                    dx: 100,
+                    color: ["black"],
+                    ...annotationLocation(data.length - 1, 0),
+                }
+            ]
+
+            // Add annotation to the chart
+            const makeAnnotations = d3.annotation()
+                .annotations(annotations)
+            d3.select("#svg1")
+                .append("g")
+                .call(makeAnnotations)
         })()
     </script>
 
     <body>
       <h1>UIUC CS 415 - Narrative Visualization (in progress)</h1>
       <h2>By Cameron Keenan</h2>
-      <svg id="svg1"></svg>
+      <div id="chart" style="position:relative">
+        <svg id="svg1"></svg>
+      </div>
 
     </body>
 
