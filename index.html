@@ -12,12 +12,15 @@
             return baseUrl + path;
         }
         function countUnique(arr, prop="name"){
-            return new Set(Array.from(arr).map(v=> v[prop])).size;
+            return uniqueByProp(arr, prop).length;
+        }
+        function uniqueByProp(arr, prop="name"){
+            return Array.from(new Set(Array.from(arr).map(v=> v[prop])))
         }
         function filterByProp(data, val, prop="year"){
             return data.filter(d=> d[prop]==val);
         }
-        function sortByProp(data, prop="wealth.worth in billions"){
+        function sortByProp(data, prop){
             data.sort((a,b)=> d3.descending(+a[prop], +b[prop]));
             return data;
         }
@@ -40,8 +43,8 @@
             return num*1000000000;
         }
 
-        // setting up a global variable
-        const jsCache = {};
+        // setting up a global variable for saving parameters and caching data
+        const props = {};
     </script>
 
     <style>
@@ -56,15 +59,27 @@
     <script>
         // forced to wrap this in async function so we can use await
         (async()=>{
+            // fetch the data and stitch 
             let data = await d3.csv(getFile("/data/billionaires.csv"));
-            jsCache.originalData = data;
-            // data = data.slice(0,1000);
-            // Parse the Data
-            data = filterByProp(data, "2014");
-            data = sortByProp(data, "wealth.worth in billions");
-            console.log(data);
+            data.forEach(d => {
+                d['wealth.per.gdp'] = !d["location.gdp"] ? 0: +d["wealth.worth in billions"]/+d["location.gdp"];
+                d['wealth.per.age'] = !d["demographics.age"] ? 0: +d["wealth.worth in billions"]/+d["demographics.age"];
+            });
 
-            var countUniqueNames = countUnique(data);
+            // setup the default props
+            props.originalData = data;
+            props.data = data;
+            props.xAxis = "wealth.worth in billions";
+            props.yAxis = "name";
+            props.colorBy = "location.citizenship";
+            props.filters = {
+                year: "2014"
+            }
+            props.data = filterByProp(props.data, props.filters.year, prop="year");
+            props.data = sortByProp(props.data, props.xAxis);
+            console.log(props.data);
+
+            var countUniqueNames = countUnique(props.data);
 
             // Credit to https://d3-graph-gallery.com/graph/barplot_horizontal.html for getting me started on a horizontal bar chart
             // I've modified this quite a bit, 
@@ -83,37 +98,42 @@
 
             // Add X axis
             var x = d3.scaleLinear()
-                .domain([0, 80])
-                .range([ 0, width]);
-            svg.append("g")
-            //     .attr("transform", "translate(0," + height + ")")
-                .call(d3.axisTop(x))
-                // .selectAll("text")
-                // .attr("transform", "translate(-10,0)rotate(-45)")
-                // .style("text-anchor", "end");
+                .domain([0, 1.1*d3.max(props.data, (d)=> +d[props.xAxis])])
+                .range([0, width]);
+            var xAxis = d3.axisTop(x);
 
             svg.append("text")
+                .attr("class", "xAxisTitle")
                 .attr("text-anchor", "middle")
                 .attr("x", width/2)
                 .attr("y", -margin.top/2)
                 .text("Wealth in Billions (USD)");
+            svg.append("g")
+                .attr("class", "xaxis")
+                .transition().duration(0)
+                .call(xAxis);
 
             // Y axis
             var y = d3.scaleBand()
                 .range([ 0, height ])
-                .domain(data.map(function(d) { return d.name; }))
+                .domain(props.data.map(function(d) { return d.name; }))
                 .padding(.1);
-            svg.append("g")
-                .call(d3.axisLeft(y))
 
-            var myColor = d3.scaleOrdinal().domain(data)
-                .range(d3.schemeCategory10 );
+            var yAxis = d3.axisLeft(y);
+            svg.append("g")
+                .attr("class", "yaxis")
+                .transition().duration(0)
+                .call(yAxis)
+
+            var colorScale = d3.scaleOrdinal()
+                .domain(uniqueByProp(props.data, props.colorBy))
+                .range(d3.schemeCategory10);
 
             // Setup tooltip. Modified from this helpful page https://d3-graph-gallery.com/graph/interactivity_tooltip.html
             var Tooltip = d3.select("#chart")
                 .append("div")
-                .style("opacity", 0)
                 .attr("class", "tooltip")
+                .style("opacity", 0)
                 .style("background-color", "white")
                 .style("border", "solid")
                 .style("border-width", "2px")
@@ -125,18 +145,12 @@
                 Tooltip
                 .style("opacity", 1)
                 .html("This billionaire is worth: $" + tb(d["wealth.worth in billions"]).toLocaleString())
-                .style("left", (x(d["wealth.worth in billions"])+margin.left+10) + "px")
+                .style("left", (x(d[props.xAxis])+margin.left+10) + "px")
                 .style("top", (y(d.name)+margin.top) + "px")
                 d3.select(this)
                 .style("stroke", "black")
                 .style("opacity", 1)
             }
-            // var mousemove = function(d) {
-            //     Tooltip
-            //     .html("The exact value of<br>this cell is: " + d["wealth.worth in billions"])
-            //     .style("left", (x(d["wealth.worth in billions"])) + "px")
-            //     .style("top", (y(d.name)) + "px")
-            // }
             var mouseleave = function(d) {
                 Tooltip
                 .style("opacity", 0)
@@ -147,42 +161,47 @@
             
             //Bars
             svg.selectAll("rect")
-                .data(data)
+                .data(props.data)
                 .enter()
                 .append("rect")
-                .attr("x", x(0) )
-                .attr("y", function(d) { return y(d.name); })
-                .attr("width", function(d) { return x(d["wealth.worth in billions"]); })
-                .attr("height", y.bandwidth())
-                .attr("fill", (d) => myColor(d["location.citizenship"]))
-                .style("opacity", 0.9)
-                .on("click", (d)=> window.open("https://www.google.com/search?q=" + encodeURIComponent(d.name), "_blank"))
-                .on("mouseover", mouseover)
-                // .on("mousemove", mousemove)
-                .on("mouseleave", mouseleave)
+                    .on("click", (d)=> window.open("https://www.google.com/search?q=" + encodeURIComponent(d.name), "_blank"))
+                    .on("mouseover", mouseover)
+                    .on("mouseleave", mouseleave)
+                .transition().duration(1000)
+                    .attr("x", x(0))
+                    .attr("y", function(d) { return y(d[props.yAxis]); })
+                    .attr("width", function(d) { return x(d[props.xAxis]); })
+                    .attr("height", y.bandwidth())
+                    .attr("fill", (d) => colorScale(d[props.colorBy]))
+                    .style("opacity", 0.9)
 
+            // annotations
             function annotationLocation(selector, rectContactLoc=1){
                 var row;
                 if (typeof(selector) == "string"){
-                    row = data.find(d => d.name === selector);
+                    row = props.data.find(d => d.name === selector);
                 }else if (typeof(selector) == 'number'){
-                    row = data[selector];
+                    row = props.data?.[selector];
+                }
+                if (!row){
+                    // if this is invalid, return a point that doesn't show up on the chart
+                    return {x: -10000, y: -10000}
                 }
                 return {
-                    x: x(row["wealth.worth in billions"]) + margin.left,
-                    y: y(row.name) + margin.top + y.bandwidth() * rectContactLoc
+                    x: x(row[props.xAxis]) + margin.left,
+                    y: y(row[props.yAxis]) + margin.top + y.bandwidth() * rectContactLoc
                 }
             }
-            function topIAnnotation(n, percent){
+            function topNAnnotation(n, percent){
                 if (percent){
-                    n = Math.floor(data.length*percent+.5);
+                    n = Math.floor(props.data.length*percent+.5);
                 }
-                var total = d3.sum(data.slice(0, n).map(o=>o["wealth.worth in billions"]))
+                var total = d3.sum(props.data.slice(0, n).map(o=>o[props.xAxis]))
                 total *= 1000000000;
                 total = Math.floor(total + .5);
                 return {
                     note: {
-                        label: `The ${n} people above this line make a combined total of \$${total.toLocaleString()}`,
+                        label: `The ${n} people above this line have a combined total of \$${total.toLocaleString()}`,
                         title: "",
                         wrap: 190
                     },
@@ -192,74 +211,149 @@
                     ...annotationLocation(n-1, 1)
                 }
             }
-            const annotations = [
-                {
-                    note: {
-                        label: "Bill Gates held the #1 spot for 18 years (non-continuous) and was overtaken by Jeff Bezos in 2017.",
-                        title: "Richest man in the world (at the time)",
-                        wrap: 190,
-                    },
-                    dy: 100,
-                    dx: -100,
-                    color: ["black"],
-                    ...annotationLocation("Bill Gates"),
-                },
-                {
-                    note: {
-                        label: "These are brothers who inherited their dad's company",
-                        title: "",
-                        wrap: 190,
-                    },
-                    dy: -50,
-                    dx: 100,
-                    color: ["black"],
-                    ...annotationLocation("Thomas and Raymond Kwok", .5),
-                },
-                {
-                    note: {
-                        label: "The dad created FEMSA, primarily known for bottling Coca Cola in Mexico",
-                        title: "Two more brothers who inherited their dad's company",
-                        wrap: 190,
-                    },
-                    dy: -50,
-                    dx: 100,
-                    color: ["black"],
-                    ...annotationLocation("Jose and Francisco Jose Calderon Rojas", .5),
-                },
-                {
-                    note: {
-                        label: "Thank you Tom for contributing to UIUC and for funding my master's program through C3 AI",
-                        title: "",
-                        wrap: 190,
-                    },
-                    dy: -50,
-                    dx: 100,
-                    color: ["black"],
-                    ...annotationLocation("Thomas Siebel", .5),
-                },
-                topIAnnotation(20),
-                topIAnnotation(200),
-                topIAnnotation(null, .5),
-                topIAnnotation(null, .9),
-                {
-                    note: {
-                        label: `Even the ${ordinal(data.length)} person here makes \$${(data[data.length -1]["wealth.worth in billions"]*1000000000).toLocaleString()}!`,
-                        title: "Last Billionaire in this dataset",
-                        wrap: 190,
-                    },
-                    dy: -100,
-                    dx: 100,
-                    color: ["black"],
-                    ...annotationLocation(data.length - 1, 0),
-                }
-            ]
 
-            // Add annotation to the chart
-            const makeAnnotations = d3.annotation()
-                .annotations(annotations)
-            d3.select("#svg1")
+            function selectAnnotations(slide){
+                const annotations = [
+                    {
+                        note: {
+                            label: "Bill Gates held the #1 spot for 18 years (non-continuous) and was overtaken by Jeff Bezos in 2017.",
+                            title: "Richest man in the world (at the time)",
+                            wrap: 190,
+                        },
+                        dy: 100,
+                        dx: -100,
+                        color: ["black"],
+                        ...annotationLocation("Bill Gates"),
+                        slides: new Set([1])
+                    },
+                    {
+                        note: {
+                            label: "These are brothers who inherited their dad's company",
+                            title: "",
+                            wrap: 190,
+                        },
+                        dy: -50,
+                        dx: 100,
+                        color: ["black"],
+                        ...annotationLocation("Thomas and Raymond Kwok", .5),
+                        slides: new Set([1])
+                    },
+                    {
+                        note: {
+                            label: "The dad created FEMSA, primarily known for bottling Coca Cola in Mexico",
+                            title: "Two more brothers who inherited their dad's company",
+                            wrap: 190,
+                        },
+                        dy: -50,
+                        dx: 100,
+                        color: ["black"],
+                        ...annotationLocation("Jose and Francisco Jose Calderon Rojas", .5),
+                        slides: new Set([1])
+                    },
+                    {
+                        note: {
+                            label: "Thank you Tom for contributing to UIUC and for funding my master's program through C3 AI",
+                            title: "",
+                            wrap: 190,
+                        },
+                        dy: -50,
+                        dx: 100,
+                        color: ["black"],
+                        ...annotationLocation("Thomas Siebel", .5),
+                        slides: new Set([1])
+                    },
+                    {...topNAnnotation(20), slides: new Set([1, 2])},
+                    {...topNAnnotation(200), slides: new Set([1, 2])},
+                    {...topNAnnotation(null, .5), slides: new Set([1, 2])},
+                    {...topNAnnotation(null, .9), slides: new Set([1, 2])},
+                    {
+                        note: {
+                            label: `Even the ${ordinal(props.data.length)} person here has \$${tb(props.data[props.data.length -1]["wealth.worth in billions"]).toLocaleString()}!`,
+                            title: "",
+                            wrap: 190,
+                        },
+                        dy: -100,
+                        dx: 100,
+                        color: ["black"],
+                        ...annotationLocation(props.data.length - 1, 0),
+                        slides: new Set([1,2])
+                    }
+                ]
+                return annotations.filter((ann) => ann.slides.has(slide));
+            }
+
+            // Add annotations to the chart after all transitions are done
+            setTimeout(()=> {
+                d3.select("#svg1")
                 .append("g")
-                .call(makeAnnotations)
+                .attr("class", "annotations")
+                .call(d3.annotation().annotations(selectAnnotations(1)))
+            }, 1000)
+
+
+            function transition(){
+                // props.xAxis = "rank";
+                props.colorBy = "wealth.how.inherited";
+                props.filters.year = "2001";
+
+                // sort/filter the underlying data according to the props
+                props.data = filterByProp(props.originalData, props.filters.year, prop="year");
+                props.data = sortByProp(props.data, props.xAxis);
+                console.log(props.data);
+
+                // change variables in preparation for transition
+                // svg height needs to change because it depends on the number of billionaires
+                
+                var countUniqueNames = countUnique(props.data);
+                height = 20*countUniqueNames - margin.top - margin.bottom;
+                // axes
+                x.domain([0, 1.1*d3.max(props.data, (d)=> +d[props.xAxis])]);
+                y.domain(props.data.map((d) => d[props.yAxis])).range([0,height]);
+                // color
+                colorScale.domain(uniqueByProp(props.data, props.colorBy));
+
+                d3.select("#svg1")
+                    .attr("height", height + margin.top + margin.bottom)
+
+                var mark = svg.selectAll("rect")
+                    .data(props.data)
+                
+                // add all new data
+                mark.enter().append("rect");
+
+                // move all rects
+                mark.transition().duration(1000)
+                    .attr("x", x(0))
+                    .attr("y", function(d) { return y(d[props.yAxis]); })
+                    .attr("width", function(d) { return x(d[props.xAxis]); })
+                    .attr("height", y.bandwidth())
+                    .attr("fill", (d) => colorScale(d[props.colorBy]))
+                    .style("opacity", 0.9);
+                
+                // remove rects that are no longer in the data
+                mark.exit()
+                    .transition()
+                    .remove()
+
+                // transition axes
+                svg.select(".xaxis")
+                    .transition().duration(1000)
+                    .call(xAxis);
+                svg.select(".yaxis")
+                    .transition().duration(1000)
+                    .call(yAxis)
+
+                // remove old annotations
+                d3.select('#svg1 > g.annotations').remove()
+                // add new annotations back in after above transitions are complete
+                setTimeout(()=> {
+                    d3.select("#svg1")
+                    .append("g")
+                    .attr("class", "annotations")
+                    .call(d3.annotation().annotations(selectAnnotations(2)))
+                }, 1000)
+            }
+            setTimeout(transition, 5000);
         })()
     </script>
 
@@ -271,42 +365,4 @@
       </div>
 
     </body>
-
-
 </html>
-
-
-
-
-<!-- Attempt #1 (Failed) -->
-<!-- var margin = {top: 20, right: 30, bottom: 40, left: 200};
-var width = 600 - margin.left - margin.right;
-var height = 500 - margin.top - margin.bottom;
-
-x = d3.scaleLinear().domain([0,150]).range([0,width]);
-y = d3.scaleBand().domain(data.map((d) => d.name)).range([0,height]);
-xl = d3.scaleBand().domain([0,1,2,3,4,5]).range([0,200]);
-
-d3.select('svg')
-    .append("g")
-            .attr("transform",
-                "translate(" + margin.left + "," + margin.top + ")")
-    .attr("width", width + margin.left + margin.right)
-    .attr("height", height + margin.top + margin.bottom)
-    .selectAll("rect")
-    .data(data)
-    .enter()
-    .append("rect")
-        .attr("x", 0)
-        .attr("y", function (d) { return y(d.name); } )
-        .attr('width',function(d,i) {return x(d["wealth.worth in billions"]);})
-        .attr('height',y.bandwidth)
-
-    d3.select('svg')
-    .append("g")
-    .call(d3.axisLeft(y));
-
-    d3.select('svg')
-    .append("g")
-        .attr("transform", `translate(${height})`)
-    .call(d3.axisTop(x)); -->
