@@ -30,7 +30,8 @@
         function filterByProps(data, mapping={}){
             var newData = data;
             Object.keys(mapping).forEach(prop => {
-                newData = newData.filter(d => d[prop] == mapping[prop]);
+                var func = typeof(mapping[prop])==='function' ? mapping[prop]: (d) => d[prop] === mapping[prop];
+                newData = newData.filter(func);
             });
             return newData;
         }
@@ -57,73 +58,123 @@
             return num*1000000000;
         }
 
+        function tooltip(d, slide){
+            var rows = []
+            rows.push(`${d.name} is worth: $${tb(d["wealth.worth in billions"]).toLocaleString()}`)
+            var company = `${d["company.name"]}, created ${d["company.founded"]}`;
+            if (d["company.relationship"].toLowerCase() !== "relation"){
+                company = `${d["company.relationship"]} of ${company}`;
+            } else {
+                company = `Associated with ${company}`;
+            }
+            rows.push(company);
+            var rankAge = `ranked ${d.rank} in ${d.year}`;
+            if (slide === 3){
+                rankAge = `Was ${d["demographics.age"]}yo and ${rankAge}`;
+            } 
+            rows.push(rankAge);
+            if (d["wealth.how.inherited"] !== "not inherited"){
+                if (d["wealth.how.inherited"].includes("generation")){
+                    rows.push(`${d["wealth.how.inherited"]} wealth`)
+                }else{
+                    rows.push(`inherited from ${d["wealth.how.inherited"]}`)
+                }
+            }
+            return rows.join("<br>");
+        }
         // setting up a global variable for saving parameters and caching data
         let props = {
             originalData: undefined,
-            data: undefined
+            data: undefined,
+            funcs: {
+                nextSlide: undefined,
+                prevSlide: undefined
+            }
         }
         const slides = [
             {
                 xAxis: "wealth.worth in billions",
+                xAxisTitle: "Wealth (in Billions USD)",
                 yAxis: "name",
-                colorBy: "location.citizenship",
-                filters: {
-                    year: "2001"
-                },
-                slide: 1
-            },
-            {
-                xAxis: "wealth.per.gdp",
-                yAxis: "name",
-                colorBy: "location.citizenship",
-                filters: {
-                    year: "2001"
-                },
-                slide: 2
-            },
-            {
-                xAxis: "wealth.per.age",
-                yAxis: "name",
-                colorBy: "location.citizenship",
+                colorBy: "wealth.how.industry",
                 filters: {
                     year: "2014"
                 },
-                slide: 3
+                slide: 1,
+                tooltip: (d) => tooltip(d,1)
+            },
+            {
+                xAxis: "wealth.per.gdp",
+                xAxisTitle: "Wealth per GDP of Home Country (unitless)",
+                yAxis: "name",
+                colorBy: "location.region",
+                filters: {
+                    year: "2014"
+                },
+                slide: 2,
+                tooltip: (d) => tooltip(d,2)
+            },
+            {
+                xAxis: "wealth.per.age",
+                xAxisTitle: "Wealth per age (Billions of USD/Years)",
+                yAxis: "name",
+                colorBy: "demographics.gender",
+                filters: {
+                    year: "2014",
+                    "wealth.per.age": d => d["wealth.per.age"] > 0
+                },
+                slide: 3,
+                tooltip: (d) => tooltip(d,3)
             },
         ]
         // start with slide 1 properties
-        function switchToSlide(slide){
+        function switchParamsToSlide(slide){
             slide = Math.floor(slide);
-            if (slide >= slides.length || slide < 0){
+            if (slide > slides.length || slide <= 0){
                 console.warn("Invalid slide: "+ slide);
                 return false;
             }
+            props.slide = slide;
             Object.assign(props, slides[slide-1]);
             return true;
         }
     </script>
-
-    <style>
-        .tooltip {
-            position: absolute;
-            z-index: 100;
-            display: block;
-        }
-    </style>
 
     <!-- Main D3 visualizations -->
     <script>
         // forced to wrap this in async function so we can use await
         (async()=>{
             // start on slide 1
-            switchToSlide(1);
+            switchParamsToSlide(1);
 
             // fetch the data and stitch 
             let data = await d3.csv(getFile("/data/billionaires.csv"));
+            let gdp2014Data = await d3.csv(getFile("/data/GDP_2014.csv"));
+            let countryToGdp = {}
+            gdp2014Data.forEach((country) => {
+                countryToGdp[country['Country']] = country['GDP'];
+            });
+
+            const industryCorrections = {
+                "Hedge funds": "Finance",
+                "Money Management": "Finance",
+                "Venture Capital": "Finance",
+                "Retail, Restaurant": "Consumer",
+                "Private equity/leveraged buyout": "Finance",
+                "Diversified financial": "Finance",
+                "Constrution": "Construction", // whoever made this dataset does not know how to spell
+                "Technology-Medical": "Technology",
+                "Technology-Computer": "Technology"
+            }
             data.forEach(d => {
-                debugger;
+                if (!d["location.gdp"] || +d["location.gdp"] === 0){
+                    d["location.gdp"] = countryToGdp[d['location.citizenship']];
+                }
                 d['wealth.per.gdp'] = !(denom = +d["location.gdp"]) || denom===0 ? 0: tb(+d["wealth.worth in billions"])/denom;
-                d['wealth.per.age'] = !(denom = +d["demographics.age"]) || denom ? 0: tb(+d["wealth.worth in billions"])/denom;
+                d['wealth.per.age'] = !(denom = +d["demographics.age"]) || denom===0 ? 0: +d["wealth.worth in billions"]/denom;
+                if (d["wealth.how.industry"] in industryCorrections){
+                    d["wealth.how.industry"] = industryCorrections[d["wealth.how.industry"]];
+                }
             });
             props.originalData = data;
 
@@ -137,9 +188,17 @@
             // Credit to https://d3-graph-gallery.com/graph/barplot_horizontal.html for getting me started on a horizontal bar chart
             // I've modified this quite a bit, 
             // set the dimensions and margins of the graph
-            var margin = {top: 80, right: 30, bottom: 40, left: 200},
-                width = 1500 - margin.left - margin.right,
+            var margin = {top: 80, right: 300, bottom: 40, left: 300},
+                width = window.innerWidth - 20 - margin.left - margin.right,
                 height = 20*countUniqueNames - margin.top - margin.bottom;
+
+            d3.selectAll(".btns")
+                .style("margin-left", margin.left+ "px")
+                .style("max-width", width + "px")
+                .style("min-width", width*3/4 + "px")
+           
+            d3.selectAll(".yearSelection")
+                .style("margin-left", width/2 - 80+ "px")
 
             // append the svg object to the body of the page
             var svg = d3.select("#svg1")
@@ -178,8 +237,9 @@
                 .transition().duration(0)
                 .call(yAxis)
 
+            var colorKeys = uniqueByProp(props.data, props.colorBy);
             var colorScale = d3.scaleOrdinal()
-                .domain(uniqueByProp(props.data, props.colorBy))
+                .domain(colorKeys)
                 .range(d3.schemeCategory10);
 
             // Setup tooltip. Modified from this helpful page https://d3-graph-gallery.com/graph/interactivity_tooltip.html
@@ -197,7 +257,7 @@
             var mouseover = function(d) {
                 Tooltip
                 .style("opacity", 1)
-                .html("This billionaire is worth: $" + tb(d["wealth.worth in billions"]).toLocaleString())
+                .html(props.tooltip(d))
                 .style("left", (x(d[props.xAxis])+margin.left+10) + "px")
                 .style("top", (y(d.name)+margin.top) + "px")
                 d3.select(this)
@@ -231,6 +291,36 @@
                     .style("opacity", 0.9)
                     .end()
                     .then(addSlideAnnotations) // add the annotations (see below for all annotation functions)
+
+            // build the legend
+            console.log(width);
+            var legend = d3.select('#svg1')
+                            .append("g")
+                            .attr("transform",
+                                "translate(" + (width + margin.left/2) + "," + margin.top*2 + ")")
+
+            var legendRectSize = 20;
+            legend.selectAll("rect")
+                .data(colorKeys)
+                .enter()
+                .append("rect")
+                    .attr("width", legendRectSize)
+                    .attr("height", legendRectSize)
+                    .attr("x", 100)
+                    .attr("y", function(d,i){ return 100 + i*(legendRectSize+5)})
+                    .style("fill", function(d){ return colorScale(d)})
+
+            // Add one dot in the legend for each name.
+            legend.selectAll("text")
+                .data(colorKeys)
+                .enter()
+                .append("text")
+                .attr("x", 100 + legendRectSize*1.2)
+                    .attr("y", function(d,i){ return 100 + i*(legendRectSize+5) + (legendRectSize/2)})
+                    .style("fill", function(d){ return colorScale(d)})
+                    .text(function(d){ return d})
+                    .attr("text-anchor", "left")
+                    .style("alignment-baseline", "middle")
 
             // annotations
             function annotationLocation(selector, rectContactLoc=1){
@@ -361,9 +451,10 @@
                 x.domain([0, 1.1*d3.max(props.data, (d)=> +d[props.xAxis])]);
                 y.domain(props.data.map((d) => d[props.yAxis])).range([0,height]);
                 // color
-                colorScale.domain(uniqueByProp(props.data, props.colorBy));
+                var colorKeys = uniqueByProp(props.data, props.colorBy);
+                console.log(colorKeys);
+                colorScale.domain(colorKeys);
 
-                debugger;
                 // remove annotations
                 d3.select('#svg1 > g.annotations').remove();
 
@@ -394,6 +485,37 @@
                     .transition()
                     .remove()
 
+                // transition the legend squares
+                var mark2 = legend.selectAll("rect")
+                    .data(colorKeys)
+                mark2.enter().append("rect");
+                // transition legend
+                mark2.transition().duration(1000)
+                    .attr("width", legendRectSize)
+                    .attr("height", legendRectSize)
+                    .attr("x", 100)
+                    .attr("y", function(d,i){ return 100 + i*(legendRectSize+5)})
+                    .style("fill", function(d){ return colorScale(d)})
+                mark2.exit()
+                    .transition()
+                    .remove()
+
+                // transition the legend text
+                var mark3 = legend.selectAll("text")
+                    .data(colorKeys)
+                mark3.enter().append("text");
+                // Add one dot in the legend for each name.
+                mark3.transition().duration(1000)
+                    .attr("x", 100 + legendRectSize*1.2)
+                    .attr("y", function(d,i){ return 100 + i*(legendRectSize+5) + (legendRectSize/2)})
+                    .style("fill", function(d){ return colorScale(d)})
+                    .text(function(d){ return d})
+                    .attr("text-anchor", "left")
+                    .style("alignment-baseline", "middle")
+                mark3.exit()
+                    .transition()
+                    .remove()
+
                 // transition axes
                 svg.select(".xaxis")
                     .transition().duration(1000)
@@ -402,29 +524,68 @@
                     .transition().duration(1000)
                     .call(yAxis)
 
+                svg.select(".xAxisTitle")
+                    .text(props.xAxisTitle);
+
                 return true;
             }
             
-            function nextSlide(){
-                props.slide++;
-                return switchToSlide(props.slide) && transition();
+            function transitionToSlide(slide){
+                return switchParamsToSlide(slide) && transition();
             }
-            // let autoNextSlide = setTimeout(()=> {
+            function nextSlide(){
+                transitionToSlide(props.slide+1);
+            }
+            function prevSlide(){
+                transitionToSlide(props.slide-1);
+            }
+            d3.selectAll("input[name='year']").on("change", function(a){
+                props.filters.year = this.value;
+                transition();
+            });
+            props.nextSlide = nextSlide;
+            props.prevSlide = prevSlide;
+            // let autoNextSlide = setInterval(()=> {
             //     console.log("auto next slide");
-            //     nextSlide();
-            //     // if (!nextSlide()){
-            //     //     clearInterval(autoNextSlide);
-            //     // }
+            //     if (!nextSlide()){
+            //         clearInterval(autoNextSlide);
+            //     }
             // }, 5000)
         })()
     </script>
 
+    <style>
+        .tooltip {
+            position: absolute;
+            z-index: 100;
+            display: block;
+        }
+        .center{
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+        }
+    </style>
     <body>
-      <h1>UIUC CS 415 - Narrative Visualization (in progress)</h1>
-      <h2>By Cameron Keenan</h2>
-      <div id="chart" style="position:relative">
-        <svg id="svg1"></svg>
-      </div>
+        <h1>UIUC CS 415 - Narrative Visualization - The Immense wealth of the world's billionaires</h1>
+        <h2>By Cameron Keenan</h2>
+        <div id="chart" style="position:relative">
+            <div class="btns">
+                <button onclick="props.nextSlide()" style="float: right">Next Slide</button>
+                <button onclick="props.prevSlide()"style="float: left">Previous Slide</button>
+                <div class="yearSelection">
+                    <!-- <label for="year">Select Year</label> -->
+                    <input type="radio" name="year" value="1996">1996
+                    <input type="radio" name="year" value="2001">2001
+                    <input type="radio" name="year" value="2014" checked>2014
+                </div>        
+            </div>
+            <svg id="svg1"></svg>
+            <div class="btns">
+                <button onclick="props.prevSlide()">Previous Slide</button>  
+                <button onclick="props.nextSlide()" style="float: right">Next Slide</button>
+            </div>
+        </div>
 
     </body>
 </html>
