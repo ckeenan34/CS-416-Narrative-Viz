@@ -60,7 +60,7 @@
 
         function tooltip(d, slide){
             var rows = []
-            rows.push(`${d.name} is worth: $${tb(d["wealth.worth in billions"]).toLocaleString()}`)
+            rows.push(`${d.name} was worth: $${tb(d["wealth.worth in billions"]).toLocaleString()}`)
             var company = `${d["company.name"]}, created ${d["company.founded"]}`;
             if (d["company.relationship"].toLowerCase() !== "relation"){
                 company = `${d["company.relationship"]} of ${company}`;
@@ -126,6 +126,18 @@
                 slide: 3,
                 tooltip: (d) => tooltip(d,3)
             },
+            {
+                xAxis: "wealth.per.age",
+                xAxisTitle: "Wealth per age (Billions of USD/Years)",
+                yAxis: "name",
+                colorBy: "wealth.how.inherited",
+                filters: {
+                    year: "2014",
+                    "wealth.per.age": d => d["wealth.per.age"] > 0
+                },
+                slide: 4,
+                tooltip: (d) => tooltip(d,3)
+            },
         ]
         // start with slide 1 properties
         function switchParamsToSlide(slide){
@@ -134,8 +146,12 @@
                 console.warn("Invalid slide: "+ slide);
                 return false;
             }
+            var year = props.filters?.year;
             props.slide = slide;
             Object.assign(props, slides[slide-1]);
+            if (year){
+                props.filters.year = year;
+            }
             return true;
         }
     </script>
@@ -355,11 +371,25 @@
                     dy: 0,
                     dx: 100,
                     color: ["black"],
-                    ...annotationLocation(n-1, 1)
+                    ...annotationLocation(n-1, 1),
+                    years: new Set(["1996", "2001", "2014"])
                 }
             }
-            function selectAnnotations(slide){
+            function selectAnnotations(slide, year){
                 const annotations = [
+                    {
+                        note: {
+                            label: "at this point, tech was what made the richest person worth what he was, but was close to media and consumer products- a trend worth keeping an eye on.",
+                            title: "",
+                            wrap: 190,
+                        },
+                        dy: 100,
+                        dx: -100,
+                        color: ["black"],
+                        ...annotationLocation("Bill Gates"),
+                        slides: new Set([1]),
+                        years: new Set(["1996"])
+                    },
                     {
                         note: {
                             label: "Bill Gates held the #1 spot for 18 years (non-continuous) and was overtaken by Jeff Bezos in 2017.",
@@ -370,7 +400,8 @@
                         dx: -100,
                         color: ["black"],
                         ...annotationLocation("Bill Gates"),
-                        slides: new Set([1])
+                        slides: new Set([1]),
+                        years: new Set(["2014"])
                     },
                     {
                         note: {
@@ -382,7 +413,8 @@
                         dx: 100,
                         color: ["black"],
                         ...annotationLocation("Thomas and Raymond Kwok", .5),
-                        slides: new Set([1])
+                        slides: new Set([1]),
+                        years: new Set(["1996", "2001", "2014"])
                     },
                     {
                         note: {
@@ -394,7 +426,8 @@
                         dx: 100,
                         color: ["black"],
                         ...annotationLocation("Jose and Francisco Jose Calderon Rojas", .5),
-                        slides: new Set([1])
+                        slides: new Set([1]),
+                        years: new Set(["1996", "2001", "2014"])
                     },
                     {
                         note: {
@@ -406,12 +439,136 @@
                         dx: 100,
                         color: ["black"],
                         ...annotationLocation("Thomas Siebel", .5),
-                        slides: new Set([1])
+                        slides: new Set([1]),
+                        years: new Set(["1996", "2001", "2014"])
                     },
-                    {...topNAnnotation(20), slides: new Set([1, 2])},
-                    {...topNAnnotation(200), slides: new Set([1, 2])},
-                    {...topNAnnotation(null, .5), slides: new Set([1, 2])},
-                    {...topNAnnotation(null, .9), slides: new Set([1, 2])},
+                    {
+                        note: {
+                            label: "notably, only one person (martin hilti)'s wealth is more than half their country's gdp, indicating a world that is still mostly constrained to national prosperity for companies, i.e. the billionaires are not controlling a majority of the commercial activity in their country ",
+                            title: "",
+                            wrap: 190,
+                        },
+                        dy: 50,
+                        dx: -100,
+                        color: ["black"],
+                        ...annotationLocation("Martin Hilti", .5),
+                        slides: new Set([3]),
+                        years: new Set(["1996"])
+                    },
+                    {
+                        note: {
+                            label: "The wealthiest woman for her age got it through inheritance just by owning walmart stock",
+                            title: "",
+                            wrap: 190,
+                        },
+                        dy: 50,
+                        dx: 100,
+                        color: ["black"],
+                        ...annotationLocation("Alice Walton", .5),
+                        slides: new Set([3]),
+                        years: new Set(["2001"])
+                    },
+                    {
+                        note: {
+                            label: "The wealthiest woman for her age got it through inheritance just by owning walmart stock",
+                            title: "",
+                            wrap: 190,
+                        },
+                        dy: 50,
+                        dx: 100,
+                        color: ["black"],
+                        ...annotationLocation("Christy Walton", .5),
+                        slides: new Set([3]),
+                        years: new Set(["2014"])
+                    },
+                    {
+                        note: {
+                            label: "The wealthiest woman for her age got it through inheritance just by owning walmart stock",
+                            title: "",
+                            wrap: 190,
+                        },
+                        dy: 50,
+                        dx: 100,
+                        color: ["black"],
+                        ...annotationLocation("Christy Walton", .5),
+                        slides: new Set([3]),
+                        years: new Set(["2014"])
+                    },
+                    {
+                        note: {
+                            label: `while the tech sector has certainly grown in the years since 1996 and 2001, 
+                                    of note is how many of the same consumer industries stayed at near the top, indicating the snowballing 
+                                    effect of wealth combined with the loosening regulations on profits in the energy sector with the 
+                                    explosion of fracking and subsequent boom in profits for a handful of energy-related companies such as Koch industries`,
+                            title: "",
+                            wrap: 190,
+                        },
+                        dy: 150,
+                        dx: 50,
+                        color: ["black"],
+                        ...annotationLocation("David Koch", 1),
+                        slides: new Set([1]),
+                        years: new Set(["2014"])
+                    },
+                    {
+                        note: {
+                            label: `interestingly, we see more billionaires approaching their own country's gdp, possibly signifying a more internationalized business 
+                            (since if it was completely internal to the country, a wealth to gdp that is more than 1 would not be possible, and indeed one close to 1.0
+                             is unlikely if all business was done internal to the country)`,
+                            title: "",
+                            wrap: 190,
+                        },
+                        dy: 100,
+                        dx: -100,
+                        color: ["black"],
+                        ...annotationLocation("Jacky Xu", 1),
+                        slides: new Set([2]),
+                        years: new Set(["2014"])
+                    },
+                    {
+                        note: {
+                            label: `Its refreshing to see that the top 9 billionaires relative to thier ages in 2014 did not inherit their wealth!`,
+                            title: "",
+                            wrap: 190,
+                        },
+                        dy: 0,
+                        dx: 100,
+                        color: ["black"],
+                        ...annotationLocation("Jeff Bezos", 1),
+                        slides: new Set([4]),
+                        years: new Set(["2014"])
+                    },
+                    {
+                        note: {
+                            label: `Even before 2014, there were at least 6 billionaires relative to thier ages who were founders of big companies`,
+                            title: "",
+                            wrap: 190,
+                        },
+                        dy: 0,
+                        dx: 100,
+                        color: ["black"],
+                        ...annotationLocation(5, 1),
+                        slides: new Set([4]),
+                        years: new Set(["1996","2001"])
+                    },
+                    {
+                        note: {
+                            label: `Doris Fisher is the only woman on this list who did not inherit her wealth! `,
+                            title: "",
+                            wrap: 190,
+                        },
+                        dy: -50,
+                        dx: 100,
+                        color: ["black"],
+                        ...annotationLocation("Doris Fisher", 1),
+                        slides: new Set([3,4]),
+                        years: new Set(["1996","2001", "2014"])
+                    },
+                    {...topNAnnotation(20), slides: new Set([2, 3])},
+                    {...topNAnnotation(150), slides: new Set([1, 2, 3, 4])},
+                    {...topNAnnotation(null, .5), slides: new Set([1, 2, 3, 4])},
+                    {...topNAnnotation(null, .9), slides: new Set([1, 2, 3, 4])},
+                    // {...topNAnnotation(null, 1), slides: new Set([1, 2, 3, 4])},
                     {
                         note: {
                             label: `Even the ${ordinal(props.data.length)} person here has \$${tb(props.data[props.data.length -1]["wealth.worth in billions"]).toLocaleString()}!`,
@@ -422,10 +579,11 @@
                         dx: 100,
                         color: ["black"],
                         ...annotationLocation(props.data.length - 1, 0),
-                        slides: new Set([1,2])
+                        slides: new Set([1,2,3]),
+                        years: new Set(["1996", "2001", "2014"])
                     }
                 ]
-                return annotations.filter((ann) => ann.slides.has(slide));
+                return annotations.filter((ann) => ann.slides.has(slide) && ann.years?.has(year));
             }
             function addSlideAnnotations(){
                 // remove old annotations if they are still there
@@ -433,7 +591,7 @@
                 d3.select("#svg1")
                     .append("g")
                     .attr("class", "annotations")
-                    .call(d3.annotation().annotations(selectAnnotations(props.slide)))
+                    .call(d3.annotation().annotations(selectAnnotations(props.slide, props.filters.year)))
             }
 
             function transition(){
@@ -545,12 +703,6 @@
             });
             props.nextSlide = nextSlide;
             props.prevSlide = prevSlide;
-            // let autoNextSlide = setInterval(()=> {
-            //     console.log("auto next slide");
-            //     if (!nextSlide()){
-            //         clearInterval(autoNextSlide);
-            //     }
-            // }, 5000)
         })()
     </script>
 
@@ -569,6 +721,15 @@
     <body>
         <h1>UIUC CS 415 - Narrative Visualization - The Immense wealth of the world's billionaires</h1>
         <h2>By Cameron Keenan</h2>
+        <p>
+            In recent years, billionaires have come under increasing scrutiny for hoarding their 
+            wealth. At the same time, they've built their wealth in industires that affect all aspects of our modern lives with which we can't live without.
+        </p>
+        <p>
+            Using data from the CORGIS Dataset Project, I wanted to show how the world's billionares made thier money,
+            how much they really have, where they are from, and much more. This way its a lot more approachable to interact
+            with this data for everyone to come to their own conclusions on our society that creates so many billionaires.
+        </p>
         <div id="chart" style="position:relative">
             <div class="btns">
                 <button onclick="props.nextSlide()" style="float: right">Next Slide</button>
